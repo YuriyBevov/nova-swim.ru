@@ -5,9 +5,8 @@ yarn-debug.log*
 yarn-error.log*
 
 # Build outputs
-# dist/
-build/
-public/config.php
+dist/
+# public/config.php
 
 # Environment variables
 .env

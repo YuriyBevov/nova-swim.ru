@@ -14,10 +14,9 @@ if (!isset($_SERVER['HTTPS']) || $_SERVER['HTTPS'] !== 'on') {
 }
 
 // Проверка origin (базовая защита от CSRF)
-$allowed_origins = ['https://aquacademy.ru', 'https://www.aquacademy.ru', 'http://localhost'];
+$allowed_origins = ['https://nova-swim.ru', 'https://www.nova-swim.ru', 'http://localhost'];
 $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
 if (!empty($origin) && !in_array($origin, $allowed_origins)) {
-  // Для разработки закомментируйте следующие строки
   // http_response_code(403);
   // echo json_encode(["result" => "error", "status" => "Доступ запрещен"], JSON_UNESCAPED_UNICODE);
   // exit;
@@ -50,12 +49,12 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 $file = isset($_FILES['file']) ? $_FILES['file'] : null;
 
 $c = true;
-$title = "Новая заявка с сайта aquacademy.ru";
+$title = "Новая заявка с сайта nova-swim.ru";
 
 // Обработка POST-данных
 foreach ($_POST as $key => $value) {
   $value = trim($value);
-  if (!empty($value) && $key != "project_name" && $key != "admin_email" && $key != "form_subject" && $key != 'recaptcha') {
+  if (!empty($value) && $key != "project_name" && $key != "admin_email" && $key != "form_subject") {
     $key = htmlspecialchars($key, ENT_QUOTES, 'UTF-8');
     $value = htmlspecialchars($value, ENT_QUOTES, 'UTF-8');
     $body .= ($c = !$c) ?
@@ -85,68 +84,6 @@ function logMailAttempt($data, $result, $error = null)
 
   file_put_contents('mail_logs.json', json_encode($logData, JSON_UNESCAPED_UNICODE) . "\n", FILE_APPEND | LOCK_EX);
 }
-
-// Проверка reCAPTCHA
-if (empty($_POST['recaptcha'])) {
-  echo json_encode([
-    "result" => "error",
-    "status" => "Отсутствует токен reCAPTCHA"
-  ], JSON_UNESCAPED_UNICODE);
-  logMailAttempt($_POST, 'missing_recaptcha');
-  exit;
-}
-
-$recaptcha_params = [
-  'secret' => $config['recaptcha']['secret_key'],
-  'response' => $_POST['recaptcha'],
-  'remoteip' => $ip
-];
-
-$ch = curl_init('https://www.google.com/recaptcha/api/siteverify');
-curl_setopt($ch, CURLOPT_POST, 1);
-curl_setopt($ch, CURLOPT_POSTFIELDS, $recaptcha_params);
-curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
-curl_setopt($ch, CURLOPT_TIMEOUT, 10);
-curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (compatible; PHP Mailer)');
-
-$response = curl_exec($ch);
-$httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-$curlError = curl_error($ch);
-curl_close($ch);
-
-$recaptcha_valid = false;
-if ($curlError) {
-  echo json_encode([
-    "result" => "error",
-    "status" => "Ошибка проверки reCAPTCHA: " . $curlError
-  ], JSON_UNESCAPED_UNICODE);
-  logMailAttempt($_POST, 'recaptcha_curl_error', $curlError);
-  exit;
-}
-
-if ($httpCode === 200 && !empty($response)) {
-  $decoded_response = json_decode($response, true);
-  if (
-    $decoded_response &&
-    isset($decoded_response['success']) &&
-    $decoded_response['success'] &&
-    $decoded_response['score'] >= $config['recaptcha']['min_score']
-  ) {
-    $recaptcha_valid = true;
-  }
-}
-
-if (!$recaptcha_valid) {
-  echo json_encode([
-    "result" => "error",
-    "status" => "Проверка reCAPTCHA не пройдена. Попробуйте еще раз."
-  ], JSON_UNESCAPED_UNICODE);
-  logMailAttempt($_POST, 'recaptcha_failed', $response);
-  exit;
-}
-
 
 // Отправка письма
 $mail = new PHPMailer\PHPMailer\PHPMailer();

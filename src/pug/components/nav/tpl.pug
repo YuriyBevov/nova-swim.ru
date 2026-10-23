@@ -4,7 +4,6 @@ mixin nav(data)
       if data.type === 'main-menu'
         .nav__header
           a(href="/").logo
-            img(src="./assets/img/logo.svg" alt="logo")
       ul.nav__list
         each item in data.items
           li.nav__list-item
@@ -28,7 +27,7 @@ mixin nav(data)
                 alt: "whatsapp"
               },
               {
-                link: "mailto:info@aquacademy.ru",
+                link: "mailto:info@nova-swim.ru",
                 icon: "./assets/img/mail-filled-icon.svg",
                 alt: "E-mail"
               }

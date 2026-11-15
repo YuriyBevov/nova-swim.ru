@@ -29,7 +29,9 @@ def main():
         raise FileNotFoundError(archive)
     target = user + '@' + host
     options = ['-o', 'BatchMode=yes', '-o', 'IdentitiesOnly=yes',
-               '-o', 'StrictHostKeyChecking=yes', '-o', 'ConnectTimeout=15']
+               '-o', 'StrictHostKeyChecking=yes', '-o', 'ConnectTimeout=15',
+               '-o', 'ConnectionAttempts=3', '-o', 'ServerAliveInterval=15',
+               '-o', 'ServerAliveCountMax=3']
     identity = os.environ.get('DEPLOY_IDENTITY')
     if identity:
         options += ['-i', str(Path(identity).expanduser())]

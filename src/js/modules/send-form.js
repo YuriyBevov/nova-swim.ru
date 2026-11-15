@@ -39,15 +39,18 @@ export function sendForm(form) {
 	function ajax(method, url, data, success, error) {
 		const xhr = new XMLHttpRequest();
 		xhr.open(method, url);
+		xhr.responseType = "json";
+		xhr.timeout = 30000;
 		xhr.setRequestHeader("Accept", "application/json");
-		xhr.onreadystatechange = function () {
-			if (xhr.readyState !== XMLHttpRequest.DONE) return;
-			if (xhr.status === 200) {
+		xhr.onload = function () {
+			if (xhr.status === 200 && xhr.response?.result === "success") {
 				success(xhr.response, xhr.responseType);
 			} else {
 				error(xhr.status, xhr.response, xhr.responseType);
 			}
 		};
+		xhr.onerror = error;
+		xhr.ontimeout = error;
 		xhr.send(data);
 	}
 }

@@ -1,0 +1,6 @@
+Options -Indexes
+DirectoryIndex index.html
+
+<FilesMatch "^(config\.php|mail-config\.php|mail_logs\.json|\.env.*)$">
+    Require all denied
+</FilesMatch>

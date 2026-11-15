@@ -6,7 +6,10 @@ yarn-error.log*
 
 # Build outputs
 dist/
-# public/config.php
+public/config.php
+shared/
+*.pem
+__pycache__/
 
 # Environment variables
 .env

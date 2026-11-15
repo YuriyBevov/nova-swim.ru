@@ -4,7 +4,38 @@ header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
 header('X-Frame-Options: DENY');
 header('X-XSS-Protection: 1; mode=block');
-error_reporting(0);
+ini_set('display_errors', '0');
+
+if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
+  header('Allow: POST');
+  http_response_code(405);
+  echo json_encode(['result' => 'error', 'status' => 'Метод не разрешен'], JSON_UNESCAPED_UNICODE);
+  exit;
+}
+
+// Конфигурация находится рядом с public_html, вне публичного корня сайта.
+$configPath = getenv('NOVA_SWIM_MAIL_CONFIG') ?: dirname(__DIR__) . '/shared/mail-config.php';
+if (!is_readable($configPath)) {
+  http_response_code(503);
+  echo json_encode(['result' => 'error', 'status' => 'Отправка почты ещё не настроена'], JSON_UNESCAPED_UNICODE);
+  exit;
+}
+
+try {
+  $config = require $configPath;
+  if (!is_array($config) || empty($config['smtp']['host']) || empty($config['smtp']['username'])
+      || empty($config['smtp']['password']) || empty($config['smtp']['port'])
+      || !in_array($config['smtp']['secure'] ?? '', ['ssl', 'tls'], true)
+      || !filter_var($config['from']['email'] ?? '', FILTER_VALIDATE_EMAIL)
+      || empty($config['recipients']) || !is_array($config['recipients'])) {
+    throw new RuntimeException('Некорректная конфигурация SMTP');
+  }
+} catch (Throwable $e) {
+  error_log('Nova Swim: не удалось загрузить конфигурацию почты');
+  http_response_code(503);
+  echo json_encode(['result' => 'error', 'status' => 'Отправка почты ещё не настроена'], JSON_UNESCAPED_UNICODE);
+  exit;
+}
 
 // Проверка HTTPS (для продакшена)
 if (!isset($_SERVER['HTTPS']) || $_SERVER['HTTPS'] !== 'on') {
@@ -14,21 +45,18 @@ if (!isset($_SERVER['HTTPS']) || $_SERVER['HTTPS'] !== 'on') {
 }
 
 // Проверка origin (базовая защита от CSRF)
-$allowed_origins = ['https://nova-swim.ru', 'https://www.nova-swim.ru', 'http://localhost'];
+$allowed_origins = $config['allowed_origins'] ?? ['https://nova-swim.ru', 'https://www.nova-swim.ru'];
 $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
 if (!empty($origin) && !in_array($origin, $allowed_origins)) {
-  // http_response_code(403);
-  // echo json_encode(["result" => "error", "status" => "Доступ запрещен"], JSON_UNESCAPED_UNICODE);
-  // exit;
+  http_response_code(403);
+  echo json_encode(["result" => "error", "status" => "Доступ запрещен"], JSON_UNESCAPED_UNICODE);
+  exit;
 }
 
 // Подключение PHPMailer
-require 'phpmailer/src/PHPMailer.php';
-require 'phpmailer/src/SMTP.php';
-require 'phpmailer/src/Exception.php';
-
-// Загрузка конфигурации
-$config = require_once 'config.php';
+require __DIR__ . '/phpmailer/PHPMailer.php';
+require __DIR__ . '/phpmailer/SMTP.php';
+require __DIR__ . '/phpmailer/Exception.php';
 
 // Инициализация переменных
 $body = '';
@@ -36,12 +64,18 @@ $result = "success";
 $status = "Сообщение успешно отправлено";
 $rfile = [];
 
-// Проверка метода запроса
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-  echo json_encode([
-    "result" => "error",
-    "status" => "Метод не разрешен"
-  ], JSON_UNESCAPED_UNICODE);
+// PHP заменяет пробелы в именах полей на подчёркивания.
+foreach ($_POST as $value) {
+  if (!is_string($value)) {
+    http_response_code(400);
+    echo json_encode(['result' => 'error', 'status' => 'Некорректные поля заявки'], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+}
+$phone = preg_replace('/\D+/', '', $_POST['Телефон'] ?? '');
+if (strlen($phone) < 10 || strlen($phone) > 15 || empty($_POST['Согласие_на_обработку_персональных_данных'])) {
+  http_response_code(400);
+  echo json_encode(['result' => 'error', 'status' => 'Укажите телефон и согласие на обработку персональных данных'], JSON_UNESCAPED_UNICODE);
   exit;
 }
 
@@ -73,20 +107,12 @@ $body = "<table style='width: 100%; border-collapse: collapse;'>$body</table>";
 // Функция логирования
 function logMailAttempt($data, $result, $error = null)
 {
-  $logData = [
-    'timestamp' => date('Y-m-d H:i:s'),
-    'ip' => $_SERVER['REMOTE_ADDR'],
-    'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? 'Unknown',
-    'data' => $data,
-    'result' => $result,
-    'error' => $error
-  ];
-
-  file_put_contents('mail_logs.json', json_encode($logData, JSON_UNESCAPED_UNICODE) . "\n", FILE_APPEND | LOCK_EX);
+  // Не записываем данные заявки или SMTP-пароль в публичные файлы.
+  error_log('Nova Swim mail: ' . $result);
 }
 
 // Отправка письма
-$mail = new PHPMailer\PHPMailer\PHPMailer();
+$mail = new PHPMailer\PHPMailer\PHPMailer(true);
 
 try {
   $mail->isSMTP();
@@ -100,17 +126,9 @@ try {
   $mail->SMTPSecure = $config['smtp']['secure'];
   $mail->Port = $config['smtp']['port'];
 
-  // Дополнительные настройки для стабильности
-  $mail->SMTPOptions = [
-    'ssl' => [
-      'verify_peer' => false,
-      'verify_peer_name' => false,
-      'allow_self_signed' => true
-    ]
-  ];
-
-  $mail->Timeout = 60;
-  $mail->SMTPKeepAlive = true;
+  // Используем штатную проверку TLS-сертификата SMTP-сервера.
+  $mail->Timeout = 15;
+  $mail->getSMTPInstance()->Timelimit = 20;
 
   $mail->setFrom($config['from']['email'], $config['from']['name']);
 
@@ -178,18 +196,21 @@ try {
   // Отправка
   if (!$mail->send()) {
     $result = "error";
-    $status = "Почта не отправлена. Ошибка: " . $mail->ErrorInfo;
+    $status = "Почта не отправлена. Попробуйте позже или свяжитесь с нами по телефону.";
     logMailAttempt($_POST, 'send_failed', $mail->ErrorInfo);
   } else {
     logMailAttempt($_POST, 'success');
   }
-} catch (Exception $e) {
+} catch (Throwable $e) {
   $result = "error";
-  $status = "Сообщение не было отправлено. Причина: " . $e->getMessage();
+  $status = "Почта не отправлена. Попробуйте позже или свяжитесь с нами по телефону.";
   logMailAttempt($_POST, 'exception', $e->getMessage());
 }
 
 // Гарантированно возвращаем JSON
+if ($result !== 'success') {
+  http_response_code(502);
+}
 echo json_encode([
   "result" => $result,
   "resultfile" => $rfile,

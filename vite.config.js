@@ -56,7 +56,7 @@ export default defineConfig({
 		},
 	},
 
-	publicDir: "public",
+	publicDir: resolve(__dirname, "public"),
 	root: "./src",
 	build: {
 		minify: false, // not for PUG

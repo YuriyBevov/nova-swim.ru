@@ -4,6 +4,7 @@ mixin nav(data)
       if data.type === 'main-menu'
         .nav__header
           a(href="/").logo
+            img(src="./assets/img/logo-main.svg" alt="Спортивный клуб НОВАСВИМ" width="140" height="63")
       ul.nav__list
         each item in data.items
           li.nav__list-item

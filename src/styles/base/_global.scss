@@ -97,6 +97,13 @@ img {
 
 .logo {
 	@extend %hover-opacity;
+	min-width: 0;
+
+	img {
+		width: 140px;
+		max-width: 100%;
+		height: auto;
+	}
 }
 
 // Отступ для якорных ссылок с учетом sticky header
